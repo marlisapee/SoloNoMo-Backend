@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,10 +22,15 @@ public class UserHandler implements HttpHandler {
         String method = exchange.getRequestMethod();
         String path = exchange.getRequestURI().getPath();
         String[] pathComponents = path.split("/");
+        System.out.println(STR."method: \{method} ");
+        System.out.println(STR."path: \{path}");
+        System.out.println(STR."path components: \{Arrays.toString(pathComponents)}");
 
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if ("GET".equals(method)) {
                 handleGet(exchange, pathComponents, conn);
+            } else if("POST".equals(method) && path.endsWith("/login")){
+                handleLogin(exchange,conn);
             } else if ("POST".equals(method)) {
                 handlePost(exchange, conn);
             } else if ("PUT".equals(method)) {
@@ -53,6 +59,25 @@ public class UserHandler implements HttpHandler {
             List<User> users = getAllUsers(conn);
             JSONArray jsonArray = new JSONArray(users);
             sendResponse(exchange, jsonArray.toString(), 200);
+        }
+    }
+
+    private void handleLogin(HttpExchange exchange, Connection conn) throws IOException, SQLException {
+        String requestBody = new String(exchange.getRequestBody().readAllBytes());
+        JSONObject json = new JSONObject(requestBody);
+        String email = json.getString("email");
+        String password = json.getString("password");
+
+        Optional<User> userOptional = getUserByEmail(email, conn);
+        if (userOptional.isPresent()) {
+            User user = userOptional.get();
+            if (user.getPassword().equals(password)) {
+                sendResponse(exchange, new JSONObject(user).toString(), 200);
+            } else {
+                sendResponse(exchange, "Invalid credentials", 401);
+            }
+        } else {
+            sendResponse(exchange, "User not found", 404);
         }
     }
 
@@ -110,13 +135,40 @@ public class UserHandler implements HttpHandler {
         }
     }
 
+    private Optional<User> getUserByEmail(String email, Connection conn) throws SQLException {
+        String query = "SELECT * FROM users WHERE email = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, email);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                User user = new User(
+                        rs.getInt("id"),
+                        rs.getString("first_name"),
+                        rs.getString("last_name"),
+                        rs.getString("email"),
+                        rs.getString("profile_picture"),
+                        rs.getString("password"),
+                        rs.getString("bio"));
+                return Optional.of(user);
+            }
+        }
+        return Optional.empty();
+    }
+
     private Optional<User> getUserById(int id, Connection conn) throws SQLException {
         String query = "SELECT * FROM users WHERE id = ?";
         try (PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.setInt(1, id);
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
-                User user = new User(rs.getInt("id"), rs.getString("first_name"), rs.getString("last_name"), rs.getString("email"), rs.getString("profile_picture"), rs.getString("password"), rs.getString("bio"));
+                User user = new User(
+                        rs.getInt("id"),
+                        rs.getString("first_name"),
+                        rs.getString("last_name"),
+                        rs.getString("email"),
+                        rs.getString("profile_picture"),
+                        rs.getString("password"),
+                        rs.getString("bio"));
                 return Optional.of(user);
             }
         }
