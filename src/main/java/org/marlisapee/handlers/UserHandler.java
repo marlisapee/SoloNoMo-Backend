@@ -22,15 +22,16 @@ public class UserHandler implements HttpHandler {
         String method = exchange.getRequestMethod();
         String path = exchange.getRequestURI().getPath();
         String[] pathComponents = path.split("/");
-        System.out.println(STR."method: \{method} ");
-        System.out.println(STR."path: \{path}");
-        System.out.println(STR."path components: \{Arrays.toString(pathComponents)}");
+
+        System.out.println(STR."Method: \{method}");
+        System.out.println(STR."Path: \{path}");
+        System.out.println(STR."Path components: \{Arrays.toString(pathComponents)}");
 
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if ("GET".equals(method)) {
                 handleGet(exchange, pathComponents, conn);
-            } else if("POST".equals(method) && path.endsWith("/login")){
-                handleLogin(exchange,conn);
+            } else if ("POST".equals(method) && path.endsWith("/login")) {
+                handleLogin(exchange, conn);
             } else if ("POST".equals(method)) {
                 handlePost(exchange, conn);
             } else if ("PUT".equals(method)) {
@@ -47,10 +48,10 @@ public class UserHandler implements HttpHandler {
     }
 
     private void handleGet(HttpExchange exchange, String[] pathComponents, Connection conn) throws IOException, SQLException {
-        if(pathComponents.length == 3){
+        if (pathComponents.length == 3) {
             int id = Integer.parseInt(pathComponents[2]);
             Optional<User> user = getUserById(id, conn);
-            if(user.isPresent()){
+            if (user.isPresent()) {
                 sendResponse(exchange, new JSONObject(user.get()).toString(), 200);
             } else {
                 sendResponse(exchange, "User not found...", 404);
@@ -63,38 +64,48 @@ public class UserHandler implements HttpHandler {
     }
 
     private void handleLogin(HttpExchange exchange, Connection conn) throws IOException, SQLException {
-        String requestBody = new String(exchange.getRequestBody().readAllBytes());
-        JSONObject json = new JSONObject(requestBody);
-        String email = json.getString("email");
-        String password = json.getString("password");
+        try {
+            String requestBody = new String(exchange.getRequestBody().readAllBytes());
+            JSONObject json = new JSONObject(requestBody);
+            String email = json.getString("email");
+            String password = json.getString("password");
 
-        Optional<User> userOptional = getUserByEmail(email, conn);
-        if (userOptional.isPresent()) {
-            User user = userOptional.get();
-            if (user.getPassword().equals(password)) {
-                sendResponse(exchange, new JSONObject(user).toString(), 200);
+            Optional<User> userOptional = getUserByEmail(email, conn);
+            if (userOptional.isPresent()) {
+                User user = userOptional.get();
+                if (user.getPassword().equals(password)) {
+                    sendResponse(exchange, new JSONObject(user).toString(), 200);
+                } else {
+                    sendResponse(exchange, "Invalid credentials", 401);
+                }
             } else {
-                sendResponse(exchange, "Invalid credentials", 401);
+                sendResponse(exchange, "User not found", 404);
             }
-        } else {
-            sendResponse(exchange, "User not found", 404);
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendResponse(exchange, "Internal server error", 500);
         }
     }
 
     private void handlePost(HttpExchange exchange, Connection conn) throws IOException, SQLException {
-        String requestBody = new String(exchange.getRequestBody().readAllBytes());
-        JSONObject json = new JSONObject(requestBody);
-        String firstName = json.getString("firstName");
-        String lastName = json.getString("lastName");
-        String email = json.getString("email");
-        String profilePicture = json.getString("profilePicture");
-        String password = json.getString("password");
-        String bio = json.getString("bio");
-        User user = new User(firstName, lastName, email, profilePicture, password, bio);
-        createUser(user, conn);
-        sendResponse(exchange, "User created", 201);
-    }
+        try {
+            String requestBody = new String(exchange.getRequestBody().readAllBytes());
+            JSONObject json = new JSONObject(requestBody);
+            String firstName = json.getString("firstName");
+            String lastName = json.getString("lastName");
+            String email = json.getString("email");
+            String profilePicture = json.getString("profilePicture");
+            String password = json.getString("password");
+            String bio = json.getString("bio");
 
+            User user = new User(firstName, lastName, email, profilePicture, password, bio);
+            createUser(user, conn);
+            sendResponse(exchange, new JSONObject(user).toString(), 201);
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendResponse(exchange, "Internal server error", 500);
+        }
+    }
 
     private void handlePut(HttpExchange exchange, String[] pathComponents, Connection conn) throws IOException, SQLException {
         if (pathComponents.length == 3) {
@@ -124,11 +135,11 @@ public class UserHandler implements HttpHandler {
         if (pathComponents.length == 3) {
             int id = Integer.parseInt(pathComponents[2]);
             Optional<User> user = getUserById(id, conn);
-            if(user.isPresent()) {
+            if (user.isPresent()) {
                 deleteUser(id, conn);
                 sendResponse(exchange, "User deleted", 200);
             } else {
-                sendResponse(exchange, "user does not exist...", 404);
+                sendResponse(exchange, "User does not exist...", 404);
             }
         } else {
             sendResponse(exchange, "Invalid request", 400);
@@ -155,7 +166,7 @@ public class UserHandler implements HttpHandler {
         return Optional.empty();
     }
 
-    private Optional<User> getUserById(int id, Connection conn) throws SQLException {
+    static Optional<User> getUserById(int id, Connection conn) throws SQLException {
         String query = "SELECT * FROM users WHERE id = ?";
         try (PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.setInt(1, id);
@@ -226,8 +237,9 @@ public class UserHandler implements HttpHandler {
     private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(statusCode, response.getBytes().length);
-        OutputStream os = exchange.getResponseBody();
-        os.write(response.getBytes());
-        os.close();
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(response.getBytes());
+        }
     }
 }
+
