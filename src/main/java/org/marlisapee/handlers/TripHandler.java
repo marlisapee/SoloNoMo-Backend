@@ -3,6 +3,8 @@ package org.marlisapee.handlers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import org.json.JSONArray;
+import org.json.JSONObject;
+import org.marlisapee.models.Trip;
 import org.marlisapee.models.TripWithUser;
 import org.marlisapee.models.User;
 
@@ -23,14 +25,16 @@ public class TripHandler implements HttpHandler {
         String path = exchange.getRequestURI().getPath();
         String[] pathComponents = path.split("/");
 
-        System.out.println("Method: " + method);
-        System.out.println("Path: " + path);
-        System.out.println("Path components: " + Arrays.toString(pathComponents));
+        System.out.println(STR."Method: \{method}");
+        System.out.println(STR."Path: \{path}");
+        System.out.println(STR."Path components: \{Arrays.toString(pathComponents)}");
 
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if ("GET".equals(method)) {
                 handleGet(exchange, pathComponents, conn);
-            } else {
+            } else if("POST".equals(method)){
+                handlePost(exchange, conn);
+            }else {
                 sendResponse(exchange, "Method not supported", 405);
             }
         } catch (SQLException e) {
@@ -58,6 +62,29 @@ public class TripHandler implements HttpHandler {
         }
     }
 
+    private void handlePost(HttpExchange exchange, Connection conn) throws IOException, SQLException {
+        try {
+            String requestBody = new String(exchange.getRequestBody().readAllBytes());
+            System.out.println(STR."Request Body: \{requestBody}");
+            JSONObject json = new JSONObject(requestBody);
+
+            int userId = json.getInt("userId");
+            String destination = json.getString("destination");
+            Date startDate = Date.valueOf(json.getString("startDate"));
+            Date endDate = Date.valueOf(json.getString("endDate"));
+            String description = json.getString("description");
+
+            Trip trip = new Trip(userId, destination, startDate, endDate, description);
+            createTrip(trip, conn);
+            System.out.println(STR."Trip created: \{trip.getDestination()}");
+
+            sendResponse(exchange, new JSONObject(trip).toString(), 201);
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendResponse(exchange, "Internal server error", 500);
+        }
+    }
+
     private List<TripWithUser> getAllTrips(Connection conn) throws SQLException {
         List<TripWithUser> trips = new ArrayList<>();
         String query = "SELECT trips.id AS trip_id, trips.user_id, trips.destination, trips.start_date, trips.end_date, trips.description, " +
@@ -65,7 +92,7 @@ public class TripHandler implements HttpHandler {
                 "FROM trips " +
                 "JOIN users ON trips.user_id = users.id " +
                 "LEFT JOIN trips user_trips ON users.id = user_trips.user_id " +
-                "GROUP BY trips.id, users.id";
+                "GROUP BY trips.id, users.id, trips.user_id, trips.destination, trips.start_date, trips.end_date, trips.description, users.first_name, users.last_name, users.email, users.profile_picture";
         try (PreparedStatement stmt = conn.prepareStatement(query); ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
                 TripWithUser tripWithUser = new TripWithUser(
@@ -122,6 +149,25 @@ public class TripHandler implements HttpHandler {
         }
         return trips;
     }
+
+    private void createTrip(Trip trip, Connection conn) throws SQLException {
+        String query = "INSERT INTO trips (user_id, destination, start_date, end_date, description) VALUES (?, ?, ?, ?, ?)";
+        try (PreparedStatement stmt = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setInt(1, trip.getUserId());
+            stmt.setString(2, trip.getDestination());
+            stmt.setDate(3, trip.getStartDate());
+            stmt.setDate(4, trip.getEndDate());
+            stmt.setString(5, trip.getDescription());
+            stmt.executeUpdate();
+
+            // Retrieve the generated id and set it to the trip object
+            ResultSet generatedKeys = stmt.getGeneratedKeys();
+            if (generatedKeys.next()) {
+                trip.setId(generatedKeys.getInt(1));
+            }
+        }
+    }
+
 
     private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", "application/json");

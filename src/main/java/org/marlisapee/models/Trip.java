@@ -1,6 +1,6 @@
 package org.marlisapee.models;
 
-import java.util.Date;
+import java.sql.Date;
 
 public class Trip {
     private int id;
@@ -51,7 +51,7 @@ public class Trip {
         this.destination = destination;
     }
 
-    public Date getStartDate() {
+    public java.sql.Date getStartDate() {
         return startDate;
     }
 
@@ -59,7 +59,7 @@ public class Trip {
         this.startDate = startDate;
     }
 
-    public Date getEndDate() {
+    public java.sql.Date getEndDate() {
         return endDate;
     }
 

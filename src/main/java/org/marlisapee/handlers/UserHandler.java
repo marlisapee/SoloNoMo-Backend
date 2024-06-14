@@ -92,7 +92,7 @@ public class UserHandler implements HttpHandler {
         String profilePicture = json.getString("profilePicture");
         String password = json.getString("password");
         String bio = json.getString("bio");
-        User user = new User(firstName, lastName, email, profilePicture, password, bio, 0); // tripCount starts at 0
+        User user = new User(firstName, lastName, email, profilePicture, password, bio, 0);
         System.out.println("user: " + user.toString());
         createUser(user, conn);
         sendResponse(exchange, new JSONObject(user).toString(), 201);
