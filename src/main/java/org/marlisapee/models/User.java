@@ -8,8 +8,9 @@ public class User {
     private String profilePicture;
     private String password;
     private String bio;
+    private int tripCount;
 
-    public User(int id, String firstName, String lastName, String email, String profilePicture, String password, String bio) {
+    public User(int id, String firstName, String lastName, String email, String profilePicture, String password, String bio, int tripCount) {
         this.id = id;
         this.firstName = firstName;
         this.lastName = lastName;
@@ -17,17 +18,21 @@ public class User {
         this.profilePicture = profilePicture;
         this.password = password;
         this.bio = bio;
+        this.tripCount = tripCount;
     }
 
-    public User(String firstName, String lastName, String email, String profilePicture, String password, String bio) {
+    public User(String firstName, String lastName, String email, String profilePicture, String password, String bio, int tripCount) {
         this.firstName = firstName;
         this.lastName = lastName;
         this.email = email;
         this.profilePicture = profilePicture;
         this.password = password;
         this.bio = bio;
+        this.tripCount = tripCount;
     }
 
+
+    // Getters and setters
     public int getId() {
         return id;
     }
@@ -82,5 +87,13 @@ public class User {
 
     public void setBio(String bio) {
         this.bio = bio;
+    }
+
+    public int getTripCount() {
+        return tripCount;
+    }
+
+    public void setTripCount(int tripCount) {
+        this.tripCount = tripCount;
     }
 }

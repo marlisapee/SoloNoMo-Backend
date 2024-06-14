@@ -23,9 +23,9 @@ public class UserHandler implements HttpHandler {
         String path = exchange.getRequestURI().getPath();
         String[] pathComponents = path.split("/");
 
-        System.out.println(STR."Method: \{method}");
-        System.out.println(STR."Path: \{path}");
-        System.out.println(STR."Path components: \{Arrays.toString(pathComponents)}");
+        System.out.println("Method: " + method);
+        System.out.println("Path: " + path);
+        System.out.println("Path components: " + Arrays.toString(pathComponents));
 
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if ("GET".equals(method)) {
@@ -64,47 +64,38 @@ public class UserHandler implements HttpHandler {
     }
 
     private void handleLogin(HttpExchange exchange, Connection conn) throws IOException, SQLException {
-        try {
-            String requestBody = new String(exchange.getRequestBody().readAllBytes());
-            JSONObject json = new JSONObject(requestBody);
-            String email = json.getString("email");
-            String password = json.getString("password");
+        String requestBody = new String(exchange.getRequestBody().readAllBytes());
+        JSONObject json = new JSONObject(requestBody);
+        String email = json.getString("email");
+        String password = json.getString("password");
 
-            Optional<User> userOptional = getUserByEmail(email, conn);
-            if (userOptional.isPresent()) {
-                User user = userOptional.get();
-                if (user.getPassword().equals(password)) {
-                    sendResponse(exchange, new JSONObject(user).toString(), 200);
-                } else {
-                    sendResponse(exchange, "Invalid credentials", 401);
-                }
+        Optional<User> userOptional = getUserByEmail(email, conn);
+        if (userOptional.isPresent()) {
+            User user = userOptional.get();
+            if (user.getPassword().equals(password)) {
+                sendResponse(exchange, new JSONObject(user).toString(), 200);
             } else {
-                sendResponse(exchange, "User not found", 404);
+                sendResponse(exchange, "Invalid credentials", 401);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-            sendResponse(exchange, "Internal server error", 500);
+        } else {
+            sendResponse(exchange, "User not found", 404);
         }
     }
 
     private void handlePost(HttpExchange exchange, Connection conn) throws IOException, SQLException {
-        try {
-            String requestBody = new String(exchange.getRequestBody().readAllBytes());
-            JSONObject json = new JSONObject(requestBody);
-            String firstName = json.getString("firstName");
-            String lastName = json.getString("lastName");
-            String email = json.getString("email");
-            String profilePicture = json.getString("profilePicture");
-            String password = json.getString("password");
-            String bio = json.getString("bio");
-
-            User user = new User(firstName, lastName, email, profilePicture, password, bio);
-            createUser(user, conn);
-            sendResponse(exchange, new JSONObject(user).toString(), 201);
-        } catch (Exception e) {
-            e.printStackTrace();
-            sendResponse(exchange, "Internal server error", 500);
-        }
+        String requestBody = new String(exchange.getRequestBody().readAllBytes());
+        System.out.println("request body: " + requestBody);
+        JSONObject json = new JSONObject(requestBody);
+        String firstName = json.getString("firstName");
+        String lastName = json.getString("lastName");
+        String email = json.getString("email");
+        String profilePicture = json.getString("profilePicture");
+        String password = json.getString("password");
+        String bio = json.getString("bio");
+        User user = new User(firstName, lastName, email, profilePicture, password, bio, 0); // tripCount starts at 0
+        System.out.println("user: " + user.toString());
+        createUser(user, conn);
+        sendResponse(exchange, new JSONObject(user).toString(), 201);
     }
 
     private void handlePut(HttpExchange exchange, String[] pathComponents, Connection conn) throws IOException, SQLException {
@@ -139,7 +130,7 @@ public class UserHandler implements HttpHandler {
                 deleteUser(id, conn);
                 sendResponse(exchange, "User deleted", 200);
             } else {
-                sendResponse(exchange, "User does not exist...", 404);
+                sendResponse(exchange, "user does not exist...", 404);
             }
         } else {
             sendResponse(exchange, "Invalid request", 400);
@@ -147,7 +138,11 @@ public class UserHandler implements HttpHandler {
     }
 
     private Optional<User> getUserByEmail(String email, Connection conn) throws SQLException {
-        String query = "SELECT * FROM users WHERE email = ?";
+        String query = "SELECT u.id, u.first_name, u.last_name, u.email, u.profile_picture, u.password, u.bio, COUNT(t.id) AS trip_count " +
+                "FROM users u " +
+                "LEFT JOIN trips t ON u.id = t.user_id " +
+                "WHERE u.email = ? " +
+                "GROUP BY u.id, u.first_name, u.last_name, u.email, u.profile_picture, u.password, u.bio";
         try (PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.setString(1, email);
             ResultSet rs = stmt.executeQuery();
@@ -159,15 +154,22 @@ public class UserHandler implements HttpHandler {
                         rs.getString("email"),
                         rs.getString("profile_picture"),
                         rs.getString("password"),
-                        rs.getString("bio"));
+                        rs.getString("bio"),
+                        rs.getInt("trip_count")
+                );
                 return Optional.of(user);
             }
         }
         return Optional.empty();
     }
 
-    static Optional<User> getUserById(int id, Connection conn) throws SQLException {
-        String query = "SELECT * FROM users WHERE id = ?";
+
+    public static Optional<User> getUserById(int id, Connection conn) throws SQLException {
+        String query = "SELECT u.id, u.first_name, u.last_name, u.email, u.profile_picture, u.password, u.bio, COUNT(t.id) AS trip_count " +
+                "FROM users u " +
+                "LEFT JOIN trips t ON u.id = t.user_id " +
+                "WHERE u.id = ? " +
+                "GROUP BY u.id, u.first_name, u.last_name, u.email, u.profile_picture, u.password, u.bio";
         try (PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.setInt(1, id);
             ResultSet rs = stmt.executeQuery();
@@ -179,7 +181,9 @@ public class UserHandler implements HttpHandler {
                         rs.getString("email"),
                         rs.getString("profile_picture"),
                         rs.getString("password"),
-                        rs.getString("bio"));
+                        rs.getString("bio"),
+                        rs.getInt("trip_count")
+                );
                 return Optional.of(user);
             }
         }
@@ -188,11 +192,23 @@ public class UserHandler implements HttpHandler {
 
     private List<User> getAllUsers(Connection conn) throws SQLException {
         List<User> users = new ArrayList<>();
-        String query = "SELECT * FROM users";
+        String query = "SELECT u.id, u.first_name, u.last_name, u.email, u.profile_picture, u.password, u.bio, COUNT(t.id) AS trip_count " +
+                "FROM users u " +
+                "LEFT JOIN trips t ON u.id = t.user_id " +
+                "GROUP BY u.id, u.first_name, u.last_name, u.email, u.profile_picture, u.password, u.bio";
         try (PreparedStatement stmt = conn.prepareStatement(query);
              ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
-                User user = new User(rs.getInt("id"), rs.getString("first_name"), rs.getString("last_name"), rs.getString("email"), rs.getString("profile_picture"), rs.getString("password"), rs.getString("bio"));
+                User user = new User(
+                        rs.getInt("id"),
+                        rs.getString("first_name"),
+                        rs.getString("last_name"),
+                        rs.getString("email"),
+                        rs.getString("profile_picture"),
+                        rs.getString("password"),
+                        rs.getString("bio"),
+                        rs.getInt("trip_count")
+                );
                 users.add(user);
             }
         }
@@ -242,4 +258,5 @@ public class UserHandler implements HttpHandler {
         }
     }
 }
+
 

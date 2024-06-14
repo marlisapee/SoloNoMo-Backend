@@ -3,7 +3,7 @@ package org.marlisapee.handlers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import org.json.JSONArray;
-import org.marlisapee.models.Trip;
+import org.marlisapee.models.TripWithUser;
 import org.marlisapee.models.User;
 
 import java.io.IOException;
@@ -23,17 +23,17 @@ public class TripHandler implements HttpHandler {
         String path = exchange.getRequestURI().getPath();
         String[] pathComponents = path.split("/");
 
-        System.out.println(STR."Method: \{method}");
-        System.out.println(STR."Path: \{path}");
-        System.out.println(STR."Path components: \{Arrays.toString(pathComponents)}");
+        System.out.println("Method: " + method);
+        System.out.println("Path: " + path);
+        System.out.println("Path components: " + Arrays.toString(pathComponents));
 
-        try(Connection conn = DriverManager.getConnection(DB_URL)){
-            if("GET".equals(method)){
+        try (Connection conn = DriverManager.getConnection(DB_URL)) {
+            if ("GET".equals(method)) {
                 handleGet(exchange, pathComponents, conn);
             } else {
                 sendResponse(exchange, "Method not supported", 405);
             }
-        } catch(SQLException e) {
+        } catch (SQLException e) {
             e.printStackTrace();
             sendResponse(exchange, "Internal server error", 500);
         }
@@ -43,7 +43,7 @@ public class TripHandler implements HttpHandler {
         // /trips/user/{userId}
         if (pathComponents.length == 4 && "user".equals(pathComponents[2])) {
             int userId = Integer.parseInt(pathComponents[3]);
-            List<Trip> trips = getAllUsersTrips(userId, conn);
+            List<TripWithUser> trips = getAllUsersTrips(userId, conn);
             if (!trips.isEmpty()) {
                 JSONArray jsonArray = new JSONArray(trips);
                 sendResponse(exchange, jsonArray.toString(), 200);
@@ -52,26 +52,36 @@ public class TripHandler implements HttpHandler {
             }
         } else {
             // Handle /trips
-            List<Trip> trips = getAllTrips(conn);
+            List<TripWithUser> trips = getAllTrips(conn);
             JSONArray jsonArray = new JSONArray(trips);
             sendResponse(exchange, jsonArray.toString(), 200);
         }
     }
 
-    private List<Trip> getAllTrips(Connection conn) throws SQLException {
-        List<Trip> trips = new ArrayList<>();
-        String query = "SELECT * FROM trips";
-        try(PreparedStatement stmt = conn.prepareStatement(query); ResultSet rs = stmt.executeQuery()){
-            while (rs.next()){
-                Trip trip = new Trip(
-                        rs.getInt("id"),
+    private List<TripWithUser> getAllTrips(Connection conn) throws SQLException {
+        List<TripWithUser> trips = new ArrayList<>();
+        String query = "SELECT trips.id AS trip_id, trips.user_id, trips.destination, trips.start_date, trips.end_date, trips.description, " +
+                "users.first_name, users.last_name, users.email, users.profile_picture, COUNT(user_trips.id) AS trip_count " +
+                "FROM trips " +
+                "JOIN users ON trips.user_id = users.id " +
+                "LEFT JOIN trips user_trips ON users.id = user_trips.user_id " +
+                "GROUP BY trips.id, users.id";
+        try (PreparedStatement stmt = conn.prepareStatement(query); ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                TripWithUser tripWithUser = new TripWithUser(
+                        rs.getInt("trip_id"),
                         rs.getInt("user_id"),
                         rs.getString("destination"),
                         rs.getDate("start_date"),
                         rs.getDate("end_date"),
-                        rs.getString("description")
-                        );
-                trips.add(trip);
+                        rs.getString("description"),
+                        rs.getString("first_name"),
+                        rs.getString("last_name"),
+                        rs.getString("email"),
+                        rs.getString("profile_picture"),
+                        rs.getInt("trip_count")
+                );
+                trips.add(tripWithUser);
             }
         }
         return trips;
@@ -81,32 +91,44 @@ public class TripHandler implements HttpHandler {
         return UserHandler.getUserById(id, conn);
     }
 
-    private List<Trip> getAllUsersTrips(int userId, Connection conn) throws SQLException {
-        List<Trip> trips = new ArrayList<>();
-        String query = "SELECT * FROM trips WHERE user_id = ?";
-        try(PreparedStatement stmt = conn.prepareStatement(query)){
+    private List<TripWithUser> getAllUsersTrips(int userId, Connection conn) throws SQLException {
+        List<TripWithUser> trips = new ArrayList<>();
+        String query = "SELECT trips.id AS trip_id, trips.user_id, trips.destination, trips.start_date, trips.end_date, trips.description, " +
+                "users.first_name, users.last_name, users.email, users.profile_picture, COUNT(user_trips.id) AS trip_count " +
+                "FROM trips " +
+                "JOIN users ON trips.user_id = users.id " +
+                "LEFT JOIN trips user_trips ON users.id = user_trips.user_id " +
+                "WHERE trips.user_id = ? " +
+                "GROUP BY trips.id, users.id, trips.user_id, trips.destination, trips.start_date, trips.end_date, trips.description, users.first_name, users.last_name, users.email, users.profile_picture";
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.setInt(1, userId);
             ResultSet rs = stmt.executeQuery();
-            while(rs.next()){
-                Trip trip = new Trip(
-                        rs.getInt("id"),
+            while (rs.next()) {
+                TripWithUser tripWithUser = new TripWithUser(
+                        rs.getInt("trip_id"),
                         rs.getInt("user_id"),
                         rs.getString("destination"),
                         rs.getDate("start_date"),
                         rs.getDate("end_date"),
-                        rs.getString("description"));
-                trips.add(trip);
+                        rs.getString("description"),
+                        rs.getString("first_name"),
+                        rs.getString("last_name"),
+                        rs.getString("email"),
+                        rs.getString("profile_picture"),
+                        rs.getInt("trip_count")
+                );
+                trips.add(tripWithUser);
             }
         }
         return trips;
     }
 
-
     private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(statusCode, response.getBytes().length);
-        try (OutputStream os = exchange.getResponseBody()){
+        try (OutputStream os = exchange.getResponseBody()) {
             os.write(response.getBytes());
         }
     }
 }
+
